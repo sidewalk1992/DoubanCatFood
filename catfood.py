@@ -22,7 +22,7 @@ def Email(sender, password, recipient, emailsub, emailmsg, smtpsever, smtpport):
         server.sendmail(sender,[recipient,],msg.as_string()) 
         server.quit()
         print('Succeed to send e-mail')
-        return 1
+        return True
     except: 
         print('Failed to send e-mail')
 
@@ -98,7 +98,7 @@ while True:
     RecipientAddress = input('Please input the recipient\'s e-mail address: ')
     #Test E-mail
     testemail =  Email(SenderAddress, Password, RecipientAddress, 'TEST MESSAGE', 'THIS IS TEST TEXT', SMTPSever, SMTPPort)
-    if testemail == 1:
+    if testemail == True:
         print('Valid e-mail setting, start searching...')
         break
     else:
