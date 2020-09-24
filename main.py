@@ -5,14 +5,15 @@ import itchat
 import pytz
 import requests
 
-USE_ITCHAT = False
+USE_ITCHAT = True
 
 if USE_ITCHAT:
     itchat.auto_login()
 
 
 def send_msg_by_itchat(msg):
-    itchat.send(msg, toUserName='神经病吧这个人！')
+    room = itchat.search_chatrooms('神经病吧这个人！')[0]
+    room.send(msg)
 
 
 def send_msg_by_server_chan(title, msg):
