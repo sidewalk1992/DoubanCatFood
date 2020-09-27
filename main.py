@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import itchat
 import pytz
 import requests
+from fake_useragent import UserAgent
 
 USE_ITCHAT = False
 WECHAT_GROUP_NAME = '豆瓣开车小组'
@@ -15,15 +16,28 @@ WECHAT_GROUP_NAME = '豆瓣开车小组'
 FILE_NAME_DETECTED_IDS = 'detected_ids.txt'
 FILE_NAME_SERVER_CHAN_KEY = 'sckey.key'
 
-SLEEP_TIME_NORMAL = 60
+SLEEP_TIME_NORMAL = 6
 SLEEP_TIME_WHEN_EXCEPTION = 60
 
-logging.basicConfig(
-    datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO,
-    format="%(asctime)s: %(filename)s [line:%(lineno)d]: [%(levelname)s]: %(message)s",
-)
-logger = logging.getLogger(__name__)
+
+def get_logger():
+    logger = logging.getLogger(__name__)
+
+    formatter = logging.Formatter("%(asctime)s: %(filename)s [line:%(lineno)d]: [%(levelname)s]: %(message)s")
+
+    handler1 = logging.StreamHandler()
+    handler2 = logging.FileHandler(filename="main.log")
+
+    handler1.setLevel(logging.DEBUG)
+    handler2.setLevel(logging.DEBUG)
+
+    handler1.setFormatter(formatter)
+    handler2.setFormatter(formatter)
+
+    logger.addHandler(handler1)
+    logger.addHandler(handler2)
+
+    return logger
 
 
 def send_msg(title, msg):
@@ -65,29 +79,34 @@ def set_detected_ids(ids):
 
 
 def main():
+    logger = get_logger()
+
     if USE_ITCHAT:
         itchat.auto_login(hotReload=True)
 
     detected_ids = get_detected_ids()
     url = 'https://api.douban.com/v2/group/656297/topics?start=0&count=100'
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36 Edg/79.0.309.56'}
 
     while True:
         time.sleep(SLEEP_TIME_NORMAL)
 
         try:
+            headers = {'User-Agent': UserAgent().random}
             resp = requests.get(url, headers=headers)
             if resp.status_code != 200:
-                logger.error(f'Got status_code: {resp.status_code}, {resp.content}')
+                logger.error(f'Got status_code: {resp.status_code}')
+                logger.error(f'resp.content: {resp.content}')
                 continue
 
             if 'json' not in resp.headers['Content-Type']:
                 logger.error(f'Got Content-Type: {resp.headers["Content-Type"]}')
+                logger.error(f'resp.content: {resp.content}')
                 continue
 
             resp = resp.json()
             if 'topics' not in resp:
                 logger.error(f'No topics in resp: {resp}')
+                logger.error(f'json data: {resp}')
                 continue
 
             for i in resp['topics']:
