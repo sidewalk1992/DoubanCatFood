@@ -1,31 +1,50 @@
+import json
+import logging
+import os
 import time
+import traceback
 from datetime import datetime, timedelta
 
 import itchat
 import pytz
 import requests
 
-USE_ITCHAT = True
+USE_ITCHAT = False
+WECHAT_GROUP_NAME = '豆瓣开车小组'
 
-if USE_ITCHAT:
-    itchat.auto_login()
+FILE_NAME_DETECTED_IDS = 'detected_ids.txt'
+FILE_NAME_SERVER_CHAN_KEY = 'sckey.key'
+
+SLEEP_TIME_NORMAL = 60
+SLEEP_TIME_WHEN_EXCEPTION = 60
+
+logging.basicConfig(
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+    format="%(asctime)s: %(filename)s [line:%(lineno)d]: [%(levelname)s]: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
-def send_msg_by_itchat(msg):
-    room = itchat.search_chatrooms('神经病吧这个人！')[0]
-    room.send(msg)
+def send_msg(title, msg):
+    def _send_msg_by_itchat():
+        room = itchat.search_chatrooms(WECHAT_GROUP_NAME)[0]
+        room.send(msg)
 
+    def _send_msg_by_server_chan():
+        with open(FILE_NAME_SERVER_CHAN_KEY) as f:
+            sckey = f.read().strip()
+        url = f'http://sc.ftqq.com/{sckey}.send'
+        params = {
+            'text': title,
+            'desp': msg,
+        }
+        requests.get(url, params=params)
 
-def send_msg_by_server_chan(title, msg):
-    with open('sckey.key') as f:
-        sckey = f.read().strip()
-    url = f'http://sc.ftqq.com/{sckey}.send'
-    params = {
-        'text': title,
-        'desp': msg,
-    }
-    resp = requests.get(url, params=params)
-    return resp
+    if USE_ITCHAT:
+        _send_msg_by_itchat()
+    else:
+        _send_msg_by_server_chan()
 
 
 def is_time_ok(dt):
@@ -33,30 +52,60 @@ def is_time_ok(dt):
         return True
 
 
+def get_detected_ids():
+    if os.path.exists(FILE_NAME_DETECTED_IDS):
+        with open(FILE_NAME_DETECTED_IDS) as f:
+            return json.load(f)
+    return []
+
+
+def set_detected_ids(ids):
+    with open(FILE_NAME_DETECTED_IDS, 'w+') as f:
+        json.dump(ids, f)
+
+
 def main():
-    detected_ids = set()
+    if USE_ITCHAT:
+        itchat.auto_login(hotReload=True)
+
+    detected_ids = get_detected_ids()
+    url = 'https://api.douban.com/v2/group/656297/topics?start=0&count=100'
+    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36 Edg/79.0.309.56'}
+
     while True:
-        for start in range(0, 100, 100):  # for page iter
-            url = f'https://api.douban.com/v2/group/656297/topics?start={start}&count={start + 100}'
-            headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36 Edg/79.0.309.56'}
-            resp = requests.get(url, headers=headers).json()
+        time.sleep(SLEEP_TIME_NORMAL)
+
+        try:
+            resp = requests.get(url, headers=headers)
+            if resp.status_code != 200:
+                logger.error(f'Got status_code: {resp.status_code}, {resp.content}')
+                continue
+
+            if 'json' not in resp.headers['Content-Type']:
+                logger.error(f'Got Content-Type: {resp.headers["Content-Type"]}')
+                continue
+
+            resp = resp.json()
+            if 'topics' not in resp:
+                logger.error(f'No topics in resp: {resp}')
+                continue
+
             for i in resp['topics']:
                 id_ = i['id']
-                create_date = i['created']
-                update_date = i['updated']
                 title = i['title']
                 url = i['alt']
+                create_date = i['created']
                 if '【开车】' in title and is_time_ok(create_date) and id_ not in detected_ids:
-                    if USE_ITCHAT:
-                        msg = f'{title}\n' \
-                              f'{url}\n' \
-                              f'发布时间：{create_date}'
-                        send_msg_by_itchat(msg)
-                    else:
-                        send_msg_by_server_chan(title, url)
-                    detected_ids.add(id_)
-                    print(f'id: {id_}\tcreate_date: {create_date}\tupdate_date: {update_date}\ttitle: {title}')
-        time.sleep(60)
+                    msg = f'{title}\n' \
+                          f'{url}\n' \
+                          f'发布时间：{create_date}'
+                    logger.info(msg.replace('\n', '\t'))
+                    send_msg(title, msg)
+                    detected_ids.append(id_)
+                    set_detected_ids(detected_ids)
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            continue
 
 
 if __name__ == '__main__':
